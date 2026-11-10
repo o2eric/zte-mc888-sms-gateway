@@ -1,5 +1,7 @@
 # Pochodzenie
 
+[English](PROVENANCE.en.md) | [Polski](PROVENANCE.md)
+
 Bramkę wydzielono z lokalnego projektu powiadomień Vultron i rozwijano jako
 `sms-gateway`. Lokalna historia Git zaczyna się 6 listopada 2026 r.; commity
 używają nazwy „SecondBrain Local”. Nie ustala to osobistego udziału procentowego

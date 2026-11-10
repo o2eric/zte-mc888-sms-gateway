@@ -1,99 +1,97 @@
 # ZTE MC888 SMS gateway
 
-Samodzielna bramka HTTP do wysyłania SMS przez modem ZTE MC888, z kolejką,
-deduplikacją i opcjonalnym, domyślnie wyłączonym kanałem odbioru. To kandydat
-roboczy: przed wdrożeniem wymagany jest przegląd bezpieczeństwa i konfiguracji.
-Nie jest częścią żadnego portalu użytkownika ani nie zawiera danych konkretnego
-konta czy instalacji.
+[English](README.md) | [Polski](README.pl.md)
 
-## Dokumentacja
+An independent HTTP SMS gateway for a ZTE MC888 modem, with a queue,
+deduplication and an optional incoming-message channel that is disabled by
+default. Review its security and configuration before deployment.
 
-- [Pierwszy test i API](docs/API.md)
-- [Architektura, konfiguracja i eksploatacja](docs/OPERATIONS.md)
-- [Specyfikacja OpenAPI](docs/openapi.yaml)
-- [Pochodzenie i ograniczenia](docs/PROVENANCE.md)
+## Documentation
 
-## Szybki test bez modemu
+- [API and first request](docs/API.en.md)
+- [Architecture, setup and operations](docs/OPERATIONS.en.md)
+- [OpenAPI specification (Polish)](docs/openapi.yaml)
+- [Provenance and limitations](docs/PROVENANCE.en.md)
 
-Potrzebny jest Python z obsługą `zoneinfo`. Uruchom w katalogu projektu:
+## Quick test without a modem
+
+Python with `zoneinfo` is required:
 
 ```sh
 python sandbox.py 8095
 ```
 
-Piaskownica nasłuchuje na `127.0.0.1`, tworzy tymczasową konfigurację i zastępuje
-modem atrapą. Nie wysyła prawdziwych SMS-ów. Tokeny w piaskownicy są fikcyjne.
+The sandbox listens on `127.0.0.1`, uses temporary configuration and a fake
+modem, and never sends real SMS messages. Sandbox tokens are fictional.
 
 ```sh
 python -m unittest -q test_sms_gateway test_sms_inbound test_otp test_otp_policy
 python -m unittest -q test_api_contract
 ```
 
-Test kontraktu wymaga dodatkowo `PyYAML` i `jsonschema`; testy bramki używają
-biblioteki standardowej. W systemie bez bazy stref czasowych może być potrzebny
-pakiet `tzdata`.
+The API contract test also requires `PyYAML` and `jsonschema`; the gateway
+tests use the standard library. Some systems need the `tzdata` package.
 
-## Konfiguracja i uruchomienie
+## Configuration and startup
 
-1. Skopiuj `config.example.json` do prywatnego katalogu. Domyślnie `live` to
-   `false`, lista odbiorców i klientów jest pusta, a odbiór SMS jest wyłączony.
-2. Określ odbiorców jako aliasy, numery w lokalnej konfiguracji oraz klientów z
-   dozwolonymi aliasami, adresami źródłowymi i skrótami tokenów. Nie umieszczaj
-   rzeczywistych numerów, konfiguracji, tokenów ani haseł w repozytorium.
-3. `python sms_gateway.py --new-token` tworzy token i jego skrót SHA-256.
-   Token przekaż klientowi bezpiecznym kanałem, a w konfiguracji klienta zapisz
-   tylko skrót. Polecenie wyświetla token: zadbaj o prywatność terminala.
-4. Ustaw `SMSGW_CONFIG`, `SMSGW_STATE_DIR` i, jeśli potrzebny jest tryb starszego
-   klienta, `SMSGW_TOKEN_FILE`. Katalog stanu i pliki konfiguracji chroń przed
-   innymi użytkownikami. `SMSGW_BIND` domyślnie wynosi `127.0.0.1`;
-   `SMSGW_PORT` domyślnie `8095`.
-5. `ZTE_URL` wskazuje modem. Hasło administratora podaj przez `ZTE_PASS` lub
-   prywatny plik wskazany przez `ZTE_ENV_FILE`. Nie wpisuj go do kodu ani do
-   przykładu konfiguracji. Modem ma jeden współdzielony slot sesji administratora.
-6. Uruchom `python sms_gateway.py`. Najpierw sprawdź zachowanie w trybie
-   `live: false`; prawdziwą wysyłkę włącz dopiero po sprawdzeniu odbiorców,
-   dostępu i kosztów swojego operatora.
+1. Copy `config.example.json` to a private directory. By default `live` is
+   `false`, recipients and clients are empty, and inbound SMS is disabled.
+2. Define recipient aliases and local numbers, and clients with permitted
+   aliases, source IP addresses and token hashes. Keep real phone numbers,
+   configuration, tokens and passwords out of the repository.
+3. `python sms_gateway.py --new-token` generates a token and its SHA-256 hash.
+   Transfer the token securely and store only its hash in the client configuration.
+   The command displays the token, so protect the terminal.
+4. Set `SMSGW_CONFIG`, `SMSGW_STATE_DIR`, and, for a legacy client if needed,
+   `SMSGW_TOKEN_FILE`. Protect configuration and state from other users.
+   `SMSGW_BIND` defaults to `127.0.0.1` and `SMSGW_PORT` to `8095`.
+5. Set `ZTE_URL` to the modem. Supply its administrator password via
+   `ZTE_PASS` or a private file specified by `ZTE_ENV_FILE`. The modem has
+   one shared administrator session.
+6. Run `python sms_gateway.py`. Test with `live: false` first; enable real
+   sending only after checking recipients, access and operator charges.
 
-Konkretną usługę systemową, dostawcę TLS i politykę kopii należy skonfigurować
-w docelowym środowisku. Serwer HTTP nie zapewnia samodzielnie TLS: przy dostępie
-z innych maszyn użyj zaufanego reverse proxy, ogranicz adresy i chroń tokeny.
+Configure the system service, TLS provider and backup policy for the target
+environment. The HTTP server does not provide TLS itself: use a trusted reverse
+proxy for remote access, restrict addresses and protect tokens.
 
-## Kontrakt i dane
+## Contract and data
 
-`POST /v1/notify` przyjmuje klucz deduplikacji, tekst i aliasy odbiorców.
-`GET /v1/status` udostępnia stan, a `GET /v1/result/<key>` wynik żądania;
-szczegóły pól i odpowiedzi opisuje `docs/openapi.yaml`. Poświadczenia klientów
-mają oddzielne uprawnienia. Bramkę ograniczają m.in. limity dzienne, deduplikacja
-i godziny ciszy; dokładny wynik zależy od konfiguracji i priorytetu.
+`POST /v1/notify` accepts a deduplication key, text and recipient aliases.
+`GET /v1/status` returns status and `GET /v1/result/<key>` returns a request
+result; field details are in the OpenAPI specification. Clients have separate
+permissions. Daily limits, deduplication and quiet hours apply according to
+configuration and priority.
 
-Status `sent` oznacza potwierdzenie przez modem, a `sent_unconfirmed` przyjęcie
-bez potwierdzonego stanu; żaden nie stanowi raportu doręczenia na telefon.
-`unknown` oznacza niepewny wynik przekazania do modemu: nie jest automatycznie
-ponawiany, a ponowne wysłanie wymaga sprawdzenia możliwości duplikatu.
-Przeterminowane zadania kolejki są pomijane przed wysyłką, a tryb próbny
-nie blokuje późniejszej rzeczywistej wysyłki tego samego klucza.
-Uszkodzenie pliku stanu zatrzymuje obsługę zamiast kasować kolejkę.
-Profil `otp_only` nie ma liczbowego limitu wysyłek; niezależne ograniczenia
-prób logowania pozostają po stronie klienta.
-Zwykłe wiadomości mogą być zapisywane w historii i kolejce, dlatego trzeba
-chronić katalog stanu oraz ustalić retencję i kopie. Profil `otp_only` redaguje
-treść kodu i nie odkłada jej do kolejki ponowień. Opcjonalne
-`otp_text_pattern` i `otp_key_pattern` określają dopuszczalny format; niepoprawne
-wyrażenie kończy się odmową. Ustawia je zaufany administrator w konfiguracji.
+`sent` indicates modem confirmation, and `sent_unconfirmed` acceptance without
+confirmed status; neither is a handset delivery receipt. `unknown` means the
+modem handoff result is uncertain and is not retried automatically. Check the
+possibility of duplicates before sending again. Expired queued jobs are skipped.
+Dry runs do not block a subsequent live request with the same key. A corrupted
+state file stops processing rather than deleting the queue.
 
-Kanał przychodzący jest domyślnie wyłączony. Może wykonywać skonfigurowane
-komendy lub wywoływać webhooki, więc przed włączeniem wymaga osobnego przeglądu
-uprawnień, nadawców i konsekwencji wykonania.
+The `otp_only` profile has no numeric sending limit; clients still enforce
+their own login-attempt limits. Ordinary messages may be stored in state and
+queue history, so protect the directory and set retention and backup policies.
+The `otp_only` profile redacts the code and does not put it in the retry queue.
+Optional `otp_text_pattern` and `otp_key_pattern` restrict the format; an
+invalid expression fails closed and must be configured by a trusted administrator.
 
-## Zakres wydania
+The inbound channel is disabled by default. It can execute configured commands
+or invoke webhooks; review sender permissions and effects before enabling it.
 
-Nie potwierdzono jeszcze instalacji E2E na odizolowanym urządzeniu ZTE ani
-pełnego pochodzenia klienta modemu; zobacz [pochodzenie](docs/PROVENANCE.md).
-Nie dołączono prywatnego portalu ani konfiguracji działającej instalacji.
+## Related project
 
-## Licencja i wsparcie
+[Play24 API](https://github.com/o2eric/play24-api) is an independent unofficial
+Play24 client. An application may use this gateway to send its own notifications
+or verification codes. The gateway does not automatically retrieve Play24
+verification codes delivered to a handset.
 
-Kod przygotowano do udostępnienia na [licencji MIT](LICENSE). Znak ZTE należy
-do odpowiedniego właściciela; projekt jest niezależny od producenta.
+## Release scope, license and support
 
-Jeśli projekt Ci pomaga, możesz [wesprzeć o2eric na BuyCoffee](https://buycoffee.to/o2eric).
+An isolated-device end-to-end installation and the full origin of the modem
+client have not been confirmed; see [provenance](docs/PROVENANCE.en.md).
+The private parent portal and live installation configuration are not included.
+
+The project is provided under the [MIT license](LICENSE) and is independent of
+ZTE. If it helps you, you can [support o2eric on BuyCoffee](https://buycoffee.to/o2eric).

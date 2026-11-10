@@ -1,5 +1,7 @@
 # API bramki SMS
 
+[English](API.en.md) | [Polski](API.md)
+
 Schematy żądań i odpowiedzi znajdują się w [openapi.yaml](openapi.yaml). API
 wymaga nagłówka `Authorization: Bearer <token>` i dozwolonego adresu klienta.
 Wartości poniżej są fikcyjne i działają wyłącznie w piaskownicy.

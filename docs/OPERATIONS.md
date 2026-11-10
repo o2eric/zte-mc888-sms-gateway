@@ -1,5 +1,7 @@
 # Architektura i eksploatacja
 
+[English](OPERATIONS.en.md) | [Polski](OPERATIONS.md)
+
 Klient HTTP → token i adres IP → walidacja odbiorców, polityki i deduplikacji →
 modem ZTE. Stan i kolejka znajdują się w prywatnym katalogu. Opcjonalny
 `sms_inbound.py` przetwarza przychodzące wiadomości i jest domyślnie wyłączony.
@@ -7,7 +9,7 @@ modem ZTE. Stan i kolejka znajdują się w prywatnym katalogu. Opcjonalny
 
 ## Przygotowanie
 
-1. Uruchom testy i piaskownicę według [README](../README.md). Test OpenAPI wymaga
+1. Uruchom testy i piaskownicę według [README](../README.pl.md). Test OpenAPI wymaga
    PyYAML i jsonschema, a na niektórych systemach potrzebne jest `tzdata`.
 2. Przygotuj prywatny plik na podstawie `config.example.json`. Dodaj aliasy i
    klientów z uprawnieniami; przykładowa struktura znajduje się w `sandbox.py`.
