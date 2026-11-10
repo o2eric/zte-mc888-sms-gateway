@@ -1,0 +1,230 @@
+openapi: 3.0.3
+info:
+  title: API SMS domu (bramka powiadomień)
+  version: "1.0.0"
+  description: |
+    Bramka wysyła SMS przez modem domu dla serwisów w sieci domowej. Serwis podaje alias odbiorcy i treść, bramka zna numery.
+    Przewodnik z przykładami: API.md. Tożsamość wiadomości = serwis + `key` + odbiorca + kanał (dublet w ciągu 7 dni).
+    Raport doręczenia do telefonu nie istnieje: `sent` znaczy „modem wysłał”.
+servers:
+  - url: http://127.0.0.1:8095
+    description: host (sieć domowa, bez TLS)
+  - url: http://127.0.0.1:8095
+    description: piaskownica lokalna (`python sandbox.py`)
+security:
+  - bearerAuth: []
+tags:
+  - name: wysylka
+  - name: stan
+paths:
+  /v1/notify:
+    post:
+      tags: [wysylka]
+      operationId: notify
+      summary: Wyślij wiadomość do jednego lub kilku odbiorców
+      description: |
+        Odpowiada `200` zawsze, gdy żądanie jest poprawne, także gdy któryś odbiorca nie dostał SMS-a; stan każdego jest w `results`.
+        Wywołanie czeka na modem: do kilkunastu sekund na odbiorcę. Zalecany limit czasu klienta: 60–120 s.
+        Treść jest normalizowana (białe znaki zwinięte do spacji) i cicho ucinana do 200 znaków.
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: {$ref: "#/components/schemas/NotifyRequest"}
+            examples:
+              alarm:
+                summary: alarm do jednego odbiorcy
+                value: {key: "alarm-pompa-2026-11-07", text: "Pompa wody: brak ciśnienia.", to: ["contact2"], kind: "alarm"}
+              pilne:
+                summary: pilna wiadomość (wymaga zgody serwisu na high)
+                value: {key: "kryzys-2026-11-07-1", text: "Brak prądu w domu od 10 minut.", priority: "high"}
+      responses:
+        "200":
+          description: Żądanie przyjęte; wynik w `results`
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/NotifyResponse"}
+              examples:
+                wyslano:
+                  value: {key: "k-1", live: true, client: "demo", results: {contact1: {sms: "sent"}, contact2: {sms: "sent"}}}
+                mieszany:
+                  value: {key: "k-2", live: true, client: "demo",
+                          results: {contact1: {sms: "sent"}, contact3: {status: "forbidden_recipient"}, ktos: {status: "unknown_recipient"}}}
+                kolejka:
+                  value: {key: "k-fail", live: true, client: "demo", results: {contact1: {sms: "queued"}}}
+        "400":
+          description: Zły JSON (także treść powyżej 4096 bajtów) albo zły `key`, pusty `text`, zły typ `to`
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              examples:
+                zlyJson: {value: {error: "bad json"}}
+                zleZadanie: {value: {error: "bad request"}}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/status:
+    get:
+      tags: [stan]
+      operationId: status
+      summary: Stan bramki z perspektywy serwisu
+      responses:
+        "200":
+          description: Tryb pracy, dozwoleni odbiorcy i liczniki
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Status"}
+              example: {live: true, client: "demo", channels: {sms: true, whatsapp: false}, daily_limit: 8,
+                        quiet_hours: ["21:30", "06:30"], recipients: {contact1: ["sms"], contact2: ["sms"]},
+                        sent_today: {sms: 5}, client_sent_today: 5, queued: 0}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+  /v1/result/{key}:
+    get:
+      tags: [stan]
+      operationId: result
+      summary: Wynik wysyłki własnego serwisu dla klucza (do 7 dni wstecz)
+      description: |
+        Przydatne po stanie `queued`. Powtórne wywołanie `notify` z tym samym kluczem (stan `duplicate`) nie zmienia zapisanego wyniku.
+      parameters:
+        - name: key
+          in: path
+          required: true
+          schema: {type: string, pattern: '^[A-Za-z0-9:_.|-]{1,120}$'}
+      responses:
+        "200":
+          description: Zapisany wynik
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/ResultResponse"}
+              example: {key: "k-fail", results: {contact1: {sms: "sent"}}}
+        "400":
+          description: Niepoprawny format klucza
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              example: {error: "bad key"}
+        "401": {$ref: "#/components/responses/Unauthorized"}
+        "403": {$ref: "#/components/responses/Forbidden"}
+        "404":
+          description: Klucza nie ma, wygasł albo należy do innego serwisu
+          content:
+            application/json:
+              schema: {$ref: "#/components/schemas/Error"}
+              example: {error: "not found"}
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      description: Token serwisu wydany przez administratora. Adres IP serwisu musi być na liście dozwolonych.
+  responses:
+    Unauthorized:
+      description: Brak lub zły token
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: "unauthorized"}
+    Forbidden:
+      description: Adres IP spoza listy dozwolonych
+      content:
+        application/json:
+          schema: {$ref: "#/components/schemas/Error"}
+          example: {error: "forbidden"}
+  schemas:
+    NotifyRequest:
+      type: object
+      required: [key, text]
+      properties:
+        key:
+          type: string
+          pattern: '^[A-Za-z0-9:_.|-]{1,120}$'
+          description: Unikalny identyfikator zdarzenia (zdarzenie + data). Ten sam klucz do tego samego odbiorcy w ciągu 7 dni to dublet.
+        text:
+          type: string
+          minLength: 1
+          description: Treść; białe znaki zwinięte, ucinana do 200 znaków. UCS-2, 70 znaków w jednym SMS-ie, 67 w kolejnych.
+        to:
+          description: Aliasy odbiorców. Brak = wszyscy dozwoleni dla serwisu. Pojedynczy tekst jest listą jednoelementową.
+          oneOf:
+            - type: array
+              items: {type: string, pattern: '^[a-z0-9_-]{1,30}$'}
+            - type: string
+        priority:
+          type: string
+          enum: [normal, high]
+          description: "`high` omija ciche godziny i limity dzienne, ale tylko serwis ze zgodą; bez zgody jest obniżane do `normal`."
+        kind:
+          type: string
+          description: Kategoria do dziennika; zostają małe litery a–z i `_`, do 30 znaków.
+    SendState:
+      type: string
+      enum: [sent, sent_unconfirmed, unknown, queued, failed, failed_final, deferred, limit, duplicate, dry_run]
+      description: |
+        sent, sent_unconfirmed, duplicate, dry_run — nic więcej nie trzeba robić.
+        unknown — wynik przekazania do modemu jest nieznany; sprawdź przed ponowieniem.
+        queued — bramka ponawia w tle (serwisy z ponowieniami); failed, deferred, limit — serwis ponawia sam.
+        failed_final — ponowienia bramki wyczerpane (tylko w /v1/result).
+    RecipientError:
+      type: string
+      enum: [forbidden_recipient, unknown_recipient, no_channel]
+    PerRecipient:
+      type: object
+      description: |
+        Albo stany po kanałach (`{"sms": "sent"}`), albo błąd odbiorcy (`{"status": "forbidden_recipient"}`).
+      properties:
+        sms: {$ref: "#/components/schemas/SendState"}
+        whatsapp: {$ref: "#/components/schemas/SendState"}
+        status: {$ref: "#/components/schemas/RecipientError"}
+      additionalProperties: false
+    NotifyResponse:
+      type: object
+      required: [key, live, client, results]
+      properties:
+        key: {type: string}
+        live: {type: boolean, description: "false = tryb próbny, nic nie jest wysyłane"}
+        client: {type: string, description: Nazwa serwisu rozpoznana po tokenie}
+        results:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/PerRecipient"}
+    ResultResponse:
+      type: object
+      required: [key, results]
+      properties:
+        key: {type: string}
+        results:
+          type: object
+          additionalProperties: {$ref: "#/components/schemas/PerRecipient"}
+    Status:
+      type: object
+      required: [live, client, channels, daily_limit, quiet_hours, recipients, sent_today, client_sent_today, queued]
+      properties:
+        live: {type: boolean}
+        client: {type: string}
+        channels:
+          type: object
+          additionalProperties: {type: boolean}
+        daily_limit: {type: integer, description: Limit dzienny na odbiorcę i kanał (łączny dla wszystkich serwisów)}
+        quiet_hours:
+          type: array
+          minItems: 2
+          maxItems: 2
+          items: {type: string, pattern: '^[0-2][0-9]:[0-5][0-9]$'}
+        recipients:
+          type: object
+          description: Odbiorcy dozwoleni dla serwisu, z kanałami mającymi numer
+          additionalProperties:
+            type: array
+            items: {type: string}
+        sent_today:
+          type: object
+          description: Wysyłki dnia wg kanału, wszystkie serwisy
+          additionalProperties: {type: integer}
+        client_sent_today: {type: integer}
+        queued: {type: integer, description: Liczba wiadomości serwisu w kolejce ponowień}
+    Error:
+      type: object
+      required: [error]
+      properties:
+        error:
+          type: string
+          enum: [unauthorized, forbidden, "bad json", "bad request", "bad key", "not found"]

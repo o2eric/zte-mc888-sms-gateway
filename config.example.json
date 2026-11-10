@@ -1,0 +1,13 @@
+{
+  "live": false,
+  "daily_limit": 8,
+  "client_daily_limit": 30,
+  "quiet_hours": ["21:30", "06:30"],
+  "max_chars": 200,
+  "allow_clients": [],
+  "channels": {"sms": true, "whatsapp": false},
+  "recipients": {},
+  "clients": {},
+  "inbound": {"enabled": false},
+  "retry": {"attempts": 4, "backoff_s": [60, 300, 1200], "max_age_s": 21600}
+}
